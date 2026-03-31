@@ -1,8 +1,8 @@
 use anyhow::Context;
 use diesel::{Connection, PgConnection, RunQueryDsl, insert_into};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
-use tracing::error;
 use tracing::level_filters::LevelFilter;
+use tracing::{error, info};
 use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::fems::Fems;
@@ -33,19 +33,20 @@ async fn main() -> Result<(), Error> {
         .map_err(|e| anyhow::anyhow!(e))
         .context("failed to run migrations")?;
 
-    let fems_url = std::env::var("FEMS_URL").context("FEMS_URL not set")?;
-    let fems_password = std::env::var("FEMS_PASSWORD").context("FEMS_PASSWORD not set")?;
-    let fems = Fems::connect(&fems_url, &fems_password).await?;
-    let mut channel = fems.subscribe_channels().await?;
+    loop {
+        info!("connecting to fems...");
+        let fems_url = std::env::var("FEMS_URL").context("FEMS_URL not set")?;
+        let fems_password = std::env::var("FEMS_PASSWORD").context("FEMS_PASSWORD not set")?;
+        let fems = Fems::connect(&fems_url, &fems_password).await?;
+        let mut channel = fems.subscribe_channels().await?;
 
-    while let Some(data) = channel.recv().await {
-        if let Err(error) = insert_into(schema::ems::dsl::ems)
-            .values(&data)
-            .execute(&mut connection)
-        {
-            error!("Error while inserting data into db: {error:?}");
+        while let Some(data) = channel.recv().await {
+            if let Err(error) = insert_into(schema::ems::dsl::ems)
+                .values(&data)
+                .execute(&mut connection)
+            {
+                error!("error while inserting data into db: {error:?}");
+            }
         }
     }
-
-    Ok(())
 }

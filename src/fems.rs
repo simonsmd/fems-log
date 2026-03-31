@@ -158,6 +158,7 @@ impl Fems {
 
         let (tx, rx) = mpsc::channel(100);
         tokio::spawn(async move {
+            let mut error_count = 0;
             loop {
                 match self.process_channel_update().await {
                     Ok(data) => {
@@ -165,7 +166,15 @@ impl Fems {
                             error!("Channel error: {error:?}");
                         }
                     }
-                    Err(error) => error!("Error while processing channel update message: {error:?}"),
+                    Err(error) => {
+                        error!("error while processing channel update message: {error:?}");
+                        error_count += 1;
+                        if error_count > 10 {
+                            error!("closing fems connection due to too many errors");
+                            drop(tx);
+                            break;
+                        }
+                    }
                 }
             }
         });
